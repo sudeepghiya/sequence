@@ -58,17 +58,21 @@
   .cell.red { color: var(--red); }
   .cell.corner { background: #1f2937; color: var(--gold); font-size: clamp(12px, 4vw, 20px); }
   .cell.legal { outline: 3px solid var(--gold); outline-offset: -3px; z-index: 1; cursor: pointer; }
-  .cell.target { animation: pulse .8s infinite alternate; }
-  @keyframes pulse { from { box-shadow: inset 0 0 0 3px var(--gold);} to { box-shadow: inset 0 0 0 99px rgba(245,197,66,.6);} }
+  .cell > span { position: relative; z-index: 2; }
+  .cell.covered { color: #fff !important; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.6); }
   .chip {
-    position: absolute; inset: 12%; border-radius: 50%;
+    position: absolute; inset: 6%; border-radius: 50%; z-index: 1;
     box-shadow: inset 0 -3px 0 rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.4);
     border: 2px solid rgba(255,255,255,.65);
   }
-  .chip.c0 { background: var(--t0); } .chip.c1 { background: var(--t1); } .chip.c2 { background: var(--t2); }
+  .chip.c0 { background: rgba(37,99,235,.82); } .chip.c1 { background: rgba(22,163,74,.82); } .chip.c2 { background: rgba(220,38,38,.82); }
   .chip.seq { border: 3px solid var(--gold); }
-  .cell.last::after { content: ""; position: absolute; inset: 0; border: 3px dashed #000; border-radius: 3px; }
-  .cell.last.removed::after { border-color: var(--red); }
+  .cell.last { z-index: 3; box-shadow: 0 0 0 3px #fff, 0 0 14px 5px #fff; animation: glow 1s ease-in-out 4 alternate; }
+  .cell.last.removed { box-shadow: 0 0 0 3px #ff4d4d, 0 0 14px 5px #ff4d4d; }
+  .cell.last.removed::after { content: "✕"; position: absolute; z-index: 3; font-size: 1.8em; color: #ff4d4d; text-shadow: 0 0 3px #000; }
+  @keyframes glow { from { transform: scale(1); } to { transform: scale(1.12); } }
+  #lastInfo { text-align: center; font-size: 13px; min-height: 1.2em; margin-top: 6px; opacity: .9; }
+  #lastInfo b { color: #fff; }
 
   #handWrap { max-width: 560px; margin: 8px auto 0; }
   #hand { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
@@ -118,7 +122,7 @@
     <details>
       <summary><b>How to play</b></summary>
       <ul>
-        <li>Pick a card from your hand, then tap a matching space on the board to place your chip. Each card appears twice on the board.</li>
+        <li>Tap a card in your hand, then tap a highlighted space on the board to place your chip. Each card appears twice on the board.</li>
         <li>Get 5 chips in a row (across, down or diagonal) to make a <b>sequence</b>. The ★ corners count for everyone.</li>
         <li><b>2 teams</b> need 2 sequences to win. <b>3 teams</b> need 1.</li>
         <li><b>Two-eyed Jacks</b> (♦ ♣) are wild: place a chip on any open space.</li>
@@ -160,11 +164,10 @@
   </div>
   <div id="board"></div>
   <div id="handWrap">
+    <div id="lastInfo"></div>
     <div id="hint"></div>
     <div id="hand"></div>
     <div id="actions" style="margin-top:10px">
-      <button id="cancelBtn" class="secondary hidden">Cancel</button>
-      <button id="playBtn" class="hidden">Place chip</button>
       <button id="deadBtn" class="secondary hidden">Swap dead card</button>
       <button id="passBtn" class="secondary hidden">No moves — pass</button>
     </div>
@@ -220,7 +223,7 @@ const $ = id => document.getElementById(id);
 const socket = io();
 let S = null;            // latest state from server
 let selected = null;     // index in hand
-let target = null;       // [r, c]
+let busy = false;        // a move is in flight
 let hideOverlay = false;
 
 const store = {
@@ -389,10 +392,10 @@ function renderGame() {
       const chip = document.createElement('div');
       chip.className = `chip c${v}` + (seqCells.has(r + ',' + c) ? ' seq' : '');
       el.appendChild(chip);
+      el.classList.add('covered');
     }
     const key = r + ',' + c;
     if (legal.has(key)) el.classList.add('legal');
-    if (target && target[0] === r && target[1] === c) el.classList.add('target');
     if (S.lastMove && S.lastMove.r === r && S.lastMove.c === c) {
       el.classList.add('last'); if (S.lastMove.action === 'remove') el.classList.add('removed');
     }
@@ -410,7 +413,7 @@ function renderGame() {
     else if (oneEyed(cd)) tag = 'REMOVE';
     else if (isDead(cd)) tag = 'DEAD';
     el.innerHTML = `<span>${rank(cd)}</span><span class="s">${SYM[cd[1]]}</span>${tag ? `<span class="tag">${tag}</span>` : ''}`;
-    el.onclick = () => { selected = (selected === i) ? null : i; target = null; renderGame(); };
+    el.onclick = () => { selected = (selected === i) ? null : i; renderGame(); };
     hand.appendChild(el);
   });
 
@@ -421,14 +424,18 @@ function renderGame() {
     else if (isDead(card)) hint = 'Both spaces for this card are taken. Swap it for a new card.';
     else if (twoEyed(card)) hint = 'Wild Jack: tap any open space';
     else if (oneEyed(card)) hint = legal.size ? "One-eyed Jack: tap an opponent's chip to remove it" : 'No opponent chips can be removed right now';
-    else hint = 'Tap a highlighted space';
-    if (target) hint = oneEyed(card) ? 'Remove this chip?' : 'Place your chip here?';
+    else hint = myTurn() ? 'Tap a highlighted space to place your chip' : 'Highlighted spaces match this card';
   }
   $('hint').textContent = hint;
   const canAct = myTurn();
-  $('playBtn').classList.toggle('hidden', !(canAct && target));
-  $('playBtn').textContent = card && oneEyed(card) ? 'Remove chip' : 'Place chip';
-  $('cancelBtn').classList.toggle('hidden', !target);
+  const lm = S.lastMove;
+  if (lm) {
+    const who = S.players.find(p => p.id === lm.by);
+    const space = LAYOUT[lm.r][lm.c];
+    const spaceName = `<span style="color:${isRed(space) ? '#ff8a8a' : '#fff'}">${rank(space)}${SYM[space[1]]}</span>`;
+    $('lastInfo').innerHTML = `Last move: <span class="dot" style="background:${TEAM_COLOR[lm.team]}"></span><b>${esc(who ? who.name : '?')}</b> ` +
+      (lm.action === 'remove' ? `removed a chip from ${spaceName}` : `placed on ${spaceName}`);
+  } else $('lastInfo').textContent = '';
   $('deadBtn').classList.toggle('hidden', !(canAct && card && isDead(card) && (!S.deadUsed || !S.canPlay)));
   const stuck = canAct && !S.canPlay && !S.hand.some(isDead);
   $('passBtn').classList.toggle('hidden', !stuck);
@@ -466,21 +473,19 @@ function onCell(r, c, isLegal) {
   if (selected === null) return toast('Pick a card from your hand first');
   if (!isLegal) return;
   if (!myTurn()) return toast("Wait for your turn");
-  target = [r, c];
-  renderGame();
-}
-$('cancelBtn').onclick = () => { target = null; renderGame(); };
-$('playBtn').onclick = () => {
+  if (busy) return;
+  busy = true;
   const card = S.hand[selected];
-  socket.emit('play', { card, r: target[0], c: target[1] }, res => {
+  socket.emit('play', { card, r, c }, res => {
+    busy = false;
     if (res.error) toast(res.error);
-    selected = null; target = null; if (S) renderGame();
+    selected = null; if (S) renderGame();
   });
-};
+}
 $('deadBtn').onclick = () => {
   socket.emit('deadCard', { card: S.hand[selected] }, res => {
     if (res.error) toast(res.error);
-    selected = null; target = null; if (S) renderGame();
+    selected = null; if (S) renderGame();
   });
 };
 $('passBtn').onclick = () => socket.emit('pass', null, res => { if (res.error) toast(res.error); });
@@ -494,9 +499,9 @@ socket.on('state', st => {
   S = st;
   if (st.phase !== 'over') hideOverlay = false;
   // Clear selection if the hand changed underneath us.
-  if (selected !== null && selected >= S.hand.length) { selected = null; target = null; }
-  if (S.phase === 'lobby') { selected = null; target = null; renderLobby(); return; }
-  if (prevPhase !== S.phase) { selected = null; target = null; }
+  if (selected !== null && selected >= S.hand.length) { selected = null; }
+  if (S.phase === 'lobby') { selected = null; renderLobby(); return; }
+  if (prevPhase !== S.phase) { selected = null; }
   renderGame();
   const key = S.phase + ':' + S.turn;
   if (myTurn() && key !== lastTurnKey && navigator.vibrate) navigator.vibrate(60);
