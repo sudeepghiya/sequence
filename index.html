@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<title>Sequence with Friends</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%232563eb' stroke='white' stroke-width='8'/></svg>">
+<style>
+  :root {
+    --felt: #14532d; --felt-dark: #0d3b20; --card: #fdfaf3; --ink: #1c1917;
+    --red: #c0262d; --t0: #2563eb; --t1: #16a34a; --t2: #dc2626; --gold: #f5c542;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--felt); color: #f5f5f4; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { min-height: 100vh; padding: env(safe-area-inset-top) 8px calc(env(safe-area-inset-bottom) + 8px); }
+  .hidden { display: none !important; }
+  h1 { font-size: 28px; margin: 24px 0 4px; letter-spacing: .5px; }
+  .sub { opacity: .75; margin: 0 0 20px; }
+  .panel { background: rgba(0,0,0,.22); border-radius: 14px; padding: 16px; margin: 12px auto; max-width: 560px; }
+  input { width: 100%; font-size: 17px; padding: 12px; border-radius: 10px; border: 0; margin: 6px 0 12px; background: #fff; color: var(--ink); }
+  button { font-size: 16px; font-weight: 600; padding: 12px 16px; border-radius: 10px; border: 0; background: var(--gold); color: #1c1917; cursor: pointer; }
+  button.secondary { background: rgba(255,255,255,.14); color: #fff; }
+  button:disabled { opacity: .4; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .center { text-align: center; }
+  .err { color: #fecaca; min-height: 1.2em; font-size: 14px; }
+  .code { font-size: 42px; font-weight: 800; letter-spacing: 8px; }
+
+  /* Lobby */
+  .teams { display: grid; gap: 8px; margin: 12px 0; }
+  .team { border-radius: 12px; padding: 10px 12px; border: 2px solid transparent; }
+  .team h3 { margin: 0 0 6px; font-size: 15px; display: flex; justify-content: space-between; }
+  .team .pl { font-size: 15px; padding: 2px 0; }
+  .t0bg { background: rgba(37,99,235,.28); } .t1bg { background: rgba(22,163,74,.32); } .t2bg { background: rgba(220,38,38,.28); }
+  .mine { border-color: #fff; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .off { opacity: .45; }
+
+  /* Game */
+  #status { max-width: 560px; margin: 6px auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+  #turnBanner { font-weight: 700; font-size: 15px; padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.25); flex: 1; }
+  #turnBanner.myturn { background: var(--gold); color: #1c1917; }
+  .scores { display: flex; gap: 6px; }
+  .score { padding: 4px 8px; border-radius: 8px; font-weight: 700; color: #fff; font-size: 13px; }
+  #board {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px;
+    width: min(100%, 560px); aspect-ratio: 1; margin: 0 auto;
+    background: var(--felt-dark); padding: 3px; border-radius: 8px;
+  }
+  .cell {
+    position: relative; background: var(--card); color: var(--ink); border-radius: 3px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: 700; font-size: clamp(9px, 2.9vw, 15px); line-height: 1; user-select: none; overflow: hidden;
+  }
+  .cell .s { font-size: 1.15em; }
+  .cell.red { color: var(--red); }
+  .cell.corner { background: #1f2937; color: var(--gold); font-size: clamp(12px, 4vw, 20px); }
+  .cell.legal { outline: 3px solid var(--gold); outline-offset: -3px; z-index: 1; cursor: pointer; }
+  .cell.target { animation: pulse .8s infinite alternate; }
+  @keyframes pulse { from { box-shadow: inset 0 0 0 3px var(--gold);} to { box-shadow: inset 0 0 0 99px rgba(245,197,66,.6);} }
+  .chip {
+    position: absolute; inset: 12%; border-radius: 50%;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.4);
+    border: 2px solid rgba(255,255,255,.65);
+  }
+  .chip.c0 { background: var(--t0); } .chip.c1 { background: var(--t1); } .chip.c2 { background: var(--t2); }
+  .chip.seq { border: 3px solid var(--gold); }
+  .cell.last::after { content: ""; position: absolute; inset: 0; border: 3px dashed #000; border-radius: 3px; }
+  .cell.last.removed::after { border-color: var(--red); }
+
+  #handWrap { max-width: 560px; margin: 8px auto 0; }
+  #hand { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .hcard {
+    width: 50px; height: 72px; background: var(--card); color: var(--ink); border-radius: 7px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 19px; box-shadow: 0 2px 4px rgba(0,0,0,.35); cursor: pointer;
+    border: 3px solid transparent; transition: transform .1s; position: relative;
+  }
+  .hcard .s { font-size: 22px; }
+  .hcard.red { color: var(--red); }
+  .hcard.sel { border-color: var(--gold); transform: translateY(-8px); }
+  .hcard .tag { position: absolute; bottom: 2px; font-size: 8px; font-weight: 700; letter-spacing: .3px; }
+  .hcard.dead { opacity: .55; }
+  #hint { text-align: center; font-size: 14px; min-height: 1.3em; margin: 8px 0; opacity: .9; }
+  #actions { display: flex; gap: 8px; justify-content: center; }
+  #log { font-size: 13px; opacity: .85; max-height: 140px; overflow-y: auto; margin-top: 6px; }
+  #log div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+  details summary { cursor: pointer; font-size: 14px; opacity: .8; }
+  .players { font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; }
+  .players .cur { font-weight: 800; text-decoration: underline; }
+
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 20px; }
+  #overlay .panel { text-align: center; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 20; max-width: 90vw; }
+  .rules { font-size: 14px; line-height: 1.45; opacity: .9; }
+  .rules li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<section id="home" class="hidden">
+  <div class="panel center">
+    <h1>♠ Sequence ♥</h1>
+    <p class="sub">Play the card-and-chip game with friends anywhere.</p>
+    <input id="nameIn" maxlength="16" placeholder="Your name" autocomplete="nickname">
+    <button id="createBtn" style="width:100%">Create a game</button>
+    <p style="opacity:.6;margin:14px 0 4px">— or join one —</p>
+    <div class="row">
+      <input id="codeIn" maxlength="4" placeholder="CODE" style="text-transform:uppercase;letter-spacing:4px;text-align:center;margin:0">
+      <button id="joinBtn" style="flex:0 0 auto">Join</button>
+    </div>
+    <div class="err" id="homeErr"></div>
+  </div>
+  <div class="panel rules">
+    <details>
+      <summary><b>How to play</b></summary>
+      <ul>
+        <li>Pick a card from your hand, then tap a matching space on the board to place your chip. Each card appears twice on the board.</li>
+        <li>Get 5 chips in a row (across, down or diagonal) to make a <b>sequence</b>. The ★ corners count for everyone.</li>
+        <li><b>2 teams</b> need 2 sequences to win. <b>3 teams</b> need 1.</li>
+        <li><b>Two-eyed Jacks</b> (♦ ♣) are wild: place a chip on any open space.</li>
+        <li><b>One-eyed Jacks</b> (♠ ♥) remove an opponent's chip (not one in a finished sequence).</li>
+        <li>If both spaces for a card are covered, it's <b>dead</b>: swap it for a new card (once per turn), then play.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<!-- LOBBY -->
+<section id="lobby" class="hidden">
+  <div class="panel center">
+    <div style="opacity:.7">Room code</div>
+    <div class="code" id="lobbyCode">----</div>
+    <button class="secondary" id="shareBtn">Share invite link</button>
+  </div>
+  <div class="panel">
+    <div class="row" id="teamCountRow">
+      <span style="flex:0 0 auto">Teams:</span>
+      <button class="secondary" data-n="2">2 teams</button>
+      <button class="secondary" data-n="3">3 teams</button>
+    </div>
+    <div class="teams" id="teams"></div>
+    <div style="font-size:13px;opacity:.75" id="lobbyNote"></div>
+    <div class="err" id="lobbyErr"></div>
+    <div class="row">
+      <button class="secondary" id="leaveBtn" style="flex:0 0 auto">Leave</button>
+      <button id="startBtn">Start game</button>
+    </div>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="game" class="hidden">
+  <div id="status">
+    <div id="turnBanner">…</div>
+    <div class="scores" id="scores"></div>
+  </div>
+  <div id="board"></div>
+  <div id="handWrap">
+    <div id="hint"></div>
+    <div id="hand"></div>
+    <div id="actions" style="margin-top:10px">
+      <button id="cancelBtn" class="secondary hidden">Cancel</button>
+      <button id="playBtn" class="hidden">Place chip</button>
+      <button id="deadBtn" class="secondary hidden">Swap dead card</button>
+      <button id="passBtn" class="secondary hidden">No moves — pass</button>
+    </div>
+    <div class="panel" style="padding:10px 12px">
+      <div class="players" id="players"></div>
+      <details style="margin-top:6px">
+        <summary>Game log · <span id="deckCount"></span></summary>
+        <div id="log"></div>
+      </details>
+      <div id="hostTools" class="hidden" style="margin-top:8px">
+        <button class="secondary" id="abortBtn" style="font-size:13px;padding:6px 10px">End game &amp; return to lobby</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="overlay" class="hidden">
+  <div class="panel">
+    <h1 id="winText">Winner!</h1>
+    <p class="sub" id="winSub"></p>
+    <button id="againBtn">Back to lobby</button>
+    <button class="secondary" id="viewBoardBtn">View board</button>
+  </div>
+</div>
+<div id="toast" class="hidden"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const LAYOUT = `
+XX 2S 3S 4S 5S 6S 7S 8S 9S XX
+6C 5C 4C 3C 2C AH KH QH TH TS
+7C AS 2D 3D 4D 5D 6D 7D 9H QS
+8C KS 6C 5C 4C 3C 2C 8D 8H KS
+9C QS 7C 6H 5H 4H AH 9D 7H AS
+TC TS 8C 7H 2H 3H KH TD 6H 2D
+QC 9S 9C 8H 9H TH QH QD 5H 3D
+KC 8S TC QC KC AC AD KD 4H 4D
+AC 7S 6S 5S 4S 3S 2S 2H 3H 5D
+XX AD KD QD TD 9D 8D 7D 6D XX
+`.trim().split('\n').map(r => r.trim().split(/\s+/));
+const POS = {};
+LAYOUT.forEach((row, r) => row.forEach((c, k) => { if (c !== 'XX') (POS[c] = POS[c] || []).push([r, k]); }));
+
+const TEAM = ['Blue', 'Green', 'Red'];
+const TEAM_COLOR = ['var(--t0)', 'var(--t1)', 'var(--t2)'];
+const SYM = { S: '♠', H: '♥', D: '♦', C: '♣' };
+const isRed = c => c[1] === 'H' || c[1] === 'D';
+const rank = c => c[0] === 'T' ? '10' : c[0];
+const twoEyed = c => c === 'JD' || c === 'JC';
+const oneEyed = c => c === 'JS' || c === 'JH';
+const $ = id => document.getElementById(id);
+
+const socket = io();
+let S = null;            // latest state from server
+let selected = null;     // index in hand
+let target = null;       // [r, c]
+let hideOverlay = false;
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+let session = { code: null, pid: null };
+
+function show(id) {
+  for (const s of ['home', 'lobby', 'game']) $(s).classList.toggle('hidden', s !== id);
+}
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 2600);
+}
+function remember(code, pid) {
+  session = { code, pid };
+  store.set('seq_room', code); store.set('seq_pid_' + code, pid);
+  history.replaceState(null, '', '?room=' + code);
+}
+function forget() {
+  if (session.code) store.del('seq_pid_' + session.code);
+  store.del('seq_room'); session = { code: null, pid: null }; S = null;
+  history.replaceState(null, '', location.pathname);
+}
+
+// ---------- Home ----------
+$('nameIn').value = store.get('seq_name') || '';
+const urlRoom = new URLSearchParams(location.search).get('room');
+if (urlRoom) $('codeIn').value = urlRoom.toUpperCase();
+
+function getName() {
+  const n = $('nameIn').value.trim();
+  if (!n) { $('homeErr').textContent = 'Enter your name first'; $('nameIn').focus(); return null; }
+  store.set('seq_name', n); return n;
+}
+$('createBtn').onclick = () => {
+  const name = getName(); if (!name) return;
+  socket.emit('create', { name }, res => {
+    if (res.error) return $('homeErr').textContent = res.error;
+    remember(res.code, res.pid);
+  });
+};
+$('joinBtn').onclick = () => {
+  const name = getName(); if (!name) return;
+  const code = $('codeIn').value.trim().toUpperCase();
+  if (code.length !== 4) return $('homeErr').textContent = 'Enter the 4-letter room code';
+  socket.emit('join', { code, name, pid: store.get('seq_pid_' + code) }, res => {
+    if (res.error) return $('homeErr').textContent = res.error;
+    remember(res.code, res.pid);
+  });
+};
+
+// Re-join automatically on load and after reconnects.
+function tryRejoin() {
+  const code = session.code || urlRoom?.toUpperCase() || store.get('seq_room');
+  const pid = code && store.get('seq_pid_' + code);
+  if (!code || !pid) { if (!S) show('home'); return; }
+  socket.emit('join', { code, pid }, res => {
+    if (res.error) { forget(); show('home'); if (urlRoom) $('codeIn').value = urlRoom.toUpperCase(); return; }
+    remember(res.code, res.pid);
+  });
+}
+socket.on('connect', tryRejoin);
+socket.on('disconnect', () => toast('Connection lost — reconnecting…'));
+
+// ---------- Lobby ----------
+$('shareBtn').onclick = async () => {
+  const url = location.origin + '/?room=' + S.code;
+  const text = `Join my Sequence game! Room ${S.code}`;
+  if (navigator.share) { try { await navigator.share({ title: 'Sequence', text, url }); return; } catch {} }
+  try { await navigator.clipboard.writeText(url); toast('Invite link copied'); } catch { prompt('Copy this link:', url); }
+};
+document.querySelectorAll('#teamCountRow button').forEach(b => b.onclick = () => socket.emit('setTeams', { n: +b.dataset.n }));
+$('startBtn').onclick = () => socket.emit('start', null, res => { $('lobbyErr').textContent = res.error || ''; });
+$('leaveBtn').onclick = () => { socket.emit('leave'); forget(); show('home'); };
+
+function renderLobby() {
+  show('lobby');
+  $('lobbyCode').textContent = S.code;
+  const host = S.you === S.hostId;
+  document.querySelectorAll('#teamCountRow button').forEach(b => {
+    b.disabled = !host;
+    b.style.background = (+b.dataset.n === S.numTeams) ? 'var(--gold)' : '';
+    b.style.color = (+b.dataset.n === S.numTeams) ? '#1c1917' : '';
+  });
+  const wrap = $('teams'); wrap.innerHTML = '';
+  for (let t = 0; t < S.numTeams; t++) {
+    const members = S.players.filter(p => p.team === t);
+    const mine = S.players.find(p => p.id === S.you)?.team === t;
+    const div = document.createElement('div');
+    div.className = `team t${t}bg` + (mine ? ' mine' : '');
+    div.innerHTML = `<h3><span><span class="dot" style="background:${TEAM_COLOR[t]}"></span>${TEAM[t]}</span>
+      ${mine ? '<span style="opacity:.7">your team</span>' : '<span style="opacity:.8">tap to join</span>'}</h3>` +
+      (members.map(p => `<div class="pl ${p.connected ? '' : 'off'}">${esc(p.name)}${p.id === S.hostId ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}</div>`).join('') || '<div class="pl" style="opacity:.5">—</div>');
+    div.onclick = () => socket.emit('pickTeam', { team: t });
+    wrap.appendChild(div);
+  }
+  $('startBtn').classList.toggle('hidden', !host);
+  $('lobbyNote').textContent = host
+    ? 'Teams need the same number of players. 2–12 players total.'
+    : 'Waiting for the host to start…';
+}
+
+// ---------- Game ----------
+const myTeam = () => S.players.find(p => p.id === S.you)?.team;
+const myTurn = () => S.phase === 'playing' && S.order[S.turn] === S.you;
+const locked = (r, c) => S.sequences.some(s => s.cells.some(([a, b]) => a === r && b === c));
+function isDead(card) {
+  return card[0] !== 'J' && POS[card].every(([r, c]) => S.board[r][c] !== null);
+}
+function legalCells(card) {
+  const out = [];
+  if (!card) return out;
+  if (twoEyed(card)) {
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) if (LAYOUT[r][c] !== 'XX' && S.board[r][c] === null) out.push([r, c]);
+  } else if (oneEyed(card)) {
+    const me = myTeam();
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) {
+      const v = S.board[r][c];
+      if (v !== null && v !== me && !locked(r, c)) out.push([r, c]);
+    }
+  } else {
+    for (const [r, c] of POS[card]) if (S.board[r][c] === null) out.push([r, c]);
+  }
+  return out;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+
+function renderGame() {
+  show('game');
+  const me = S.you;
+  const curId = S.order[S.turn];
+  const cur = S.players.find(p => p.id === curId);
+  const banner = $('turnBanner');
+  if (S.phase === 'over') {
+    banner.textContent = S.winner === null ? 'Draw' : `${TEAM[S.winner]} team wins!`; banner.className = '';
+  } else if (curId === me) {
+    banner.textContent = 'Your turn'; banner.className = 'myturn';
+  } else {
+    banner.innerHTML = `<span class="dot" style="background:${TEAM_COLOR[cur.team]}"></span>${esc(cur.name)}'s turn`; banner.className = '';
+  }
+
+  $('scores').innerHTML = Array.from({ length: S.numTeams }, (_, t) => {
+    const n = S.sequences.filter(s => s.team === t).length;
+    return `<span class="score" style="background:${TEAM_COLOR[t]}">${n}/${S.seqNeeded}</span>`;
+  }).join('');
+
+  // Board
+  const card = selected !== null ? S.hand[selected] : null;
+  const legal = new Set(legalCells(card).map(([r, c]) => r + ',' + c));
+  const seqCells = new Set(S.sequences.flatMap(s => s.cells.map(([r, c]) => r + ',' + c)));
+  const board = $('board'); board.innerHTML = '';
+  for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) {
+    const code = LAYOUT[r][c];
+    const el = document.createElement('div');
+    el.className = 'cell';
+    if (code === 'XX') { el.classList.add('corner'); el.textContent = '★'; }
+    else {
+      if (isRed(code)) el.classList.add('red');
+      el.innerHTML = `<span>${rank(code)}</span><span class="s">${SYM[code[1]]}</span>`;
+    }
+    const v = S.board[r][c];
+    if (v !== null) {
+      const chip = document.createElement('div');
+      chip.className = `chip c${v}` + (seqCells.has(r + ',' + c) ? ' seq' : '');
+      el.appendChild(chip);
+    }
+    const key = r + ',' + c;
+    if (legal.has(key)) el.classList.add('legal');
+    if (target && target[0] === r && target[1] === c) el.classList.add('target');
+    if (S.lastMove && S.lastMove.r === r && S.lastMove.c === c) {
+      el.classList.add('last'); if (S.lastMove.action === 'remove') el.classList.add('removed');
+    }
+    el.onclick = () => onCell(r, c, legal.has(key));
+    board.appendChild(el);
+  }
+
+  // Hand
+  const hand = $('hand'); hand.innerHTML = '';
+  S.hand.forEach((cd, i) => {
+    const el = document.createElement('div');
+    el.className = 'hcard' + (isRed(cd) ? ' red' : '') + (i === selected ? ' sel' : '') + (isDead(cd) ? ' dead' : '');
+    let tag = '';
+    if (twoEyed(cd)) tag = 'WILD';
+    else if (oneEyed(cd)) tag = 'REMOVE';
+    else if (isDead(cd)) tag = 'DEAD';
+    el.innerHTML = `<span>${rank(cd)}</span><span class="s">${SYM[cd[1]]}</span>${tag ? `<span class="tag">${tag}</span>` : ''}`;
+    el.onclick = () => { selected = (selected === i) ? null : i; target = null; renderGame(); };
+    hand.appendChild(el);
+  });
+
+  // Hint + actions
+  let hint = '';
+  if (S.phase === 'playing') {
+    if (card === null) hint = myTurn() ? 'Pick a card from your hand' : 'You can look at your cards while you wait';
+    else if (isDead(card)) hint = 'Both spaces for this card are taken. Swap it for a new card.';
+    else if (twoEyed(card)) hint = 'Wild Jack: tap any open space';
+    else if (oneEyed(card)) hint = legal.size ? "One-eyed Jack: tap an opponent's chip to remove it" : 'No opponent chips can be removed right now';
+    else hint = 'Tap a highlighted space';
+    if (target) hint = oneEyed(card) ? 'Remove this chip?' : 'Place your chip here?';
+  }
+  $('hint').textContent = hint;
+  const canAct = myTurn();
+  $('playBtn').classList.toggle('hidden', !(canAct && target));
+  $('playBtn').textContent = card && oneEyed(card) ? 'Remove chip' : 'Place chip';
+  $('cancelBtn').classList.toggle('hidden', !target);
+  $('deadBtn').classList.toggle('hidden', !(canAct && card && isDead(card) && (!S.deadUsed || !S.canPlay)));
+  const stuck = canAct && !S.canPlay && !S.hand.some(isDead);
+  $('passBtn').classList.toggle('hidden', !stuck);
+  if (stuck) hint = 'None of your cards can be played. Pass your turn.';
+  if (canAct && !S.canPlay && S.hand.some(isDead)) hint = 'Swap your dead cards to get a playable one.';
+  $('hint').textContent = hint;
+
+  // Players, log
+  $('players').innerHTML = S.order.map(id => {
+    const p = S.players.find(x => x.id === id);
+    return `<span class="${id === curId && S.phase === 'playing' ? 'cur' : ''} ${p.connected ? '' : 'off'}"><span class="dot" style="background:${TEAM_COLOR[p.team]}"></span>${esc(p.name)}${p.id === me ? ' (you)' : ''}</span>`;
+  }).join('');
+  $('deckCount').textContent = `${S.deckCount} cards left`;
+  $('log').innerHTML = S.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join('');
+  $('hostTools').classList.toggle('hidden', S.hostId !== me);
+
+  // Winner overlay
+  const over = S.phase === 'over';
+  $('overlay').classList.toggle('hidden', !over || hideOverlay);
+  if (over && S.winner === null) {
+    $('winText').textContent = "It's a draw"; $('winText').style.color = '';
+    $('winSub').textContent = 'The board filled up.';
+  } else if (over) {
+    const won = myTeam() === S.winner;
+    $('winText').textContent = won ? '🏆 You win!' : `${TEAM[S.winner]} team wins`;
+    $('winText').style.color = TEAM_COLOR[S.winner];
+    $('winSub').textContent = S.players.filter(p => p.team === S.winner).map(p => p.name).join(', ');
+    $('againBtn').classList.toggle('hidden', S.hostId !== me);
+    if (S.hostId !== me) $('winSub').textContent += ' — waiting for the host';
+  }
+}
+
+function onCell(r, c, isLegal) {
+  if (!S || S.phase !== 'playing') return;
+  if (selected === null) return toast('Pick a card from your hand first');
+  if (!isLegal) return;
+  if (!myTurn()) return toast("Wait for your turn");
+  target = [r, c];
+  renderGame();
+}
+$('cancelBtn').onclick = () => { target = null; renderGame(); };
+$('playBtn').onclick = () => {
+  const card = S.hand[selected];
+  socket.emit('play', { card, r: target[0], c: target[1] }, res => {
+    if (res.error) toast(res.error);
+    selected = null; target = null; if (S) renderGame();
+  });
+};
+$('deadBtn').onclick = () => {
+  socket.emit('deadCard', { card: S.hand[selected] }, res => {
+    if (res.error) toast(res.error);
+    selected = null; target = null; if (S) renderGame();
+  });
+};
+$('passBtn').onclick = () => socket.emit('pass', null, res => { if (res.error) toast(res.error); });
+$('againBtn').onclick =() => socket.emit('backToLobby');
+$('viewBoardBtn').onclick = () => { hideOverlay = true; $('overlay').classList.add('hidden'); };
+$('abortBtn').onclick = () => { if (confirm('End this game for everyone?')) socket.emit('backToLobby'); };
+
+let lastTurnKey = '';
+socket.on('state', st => {
+  const prevPhase = S?.phase;
+  S = st;
+  if (st.phase !== 'over') hideOverlay = false;
+  // Clear selection if the hand changed underneath us.
+  if (selected !== null && selected >= S.hand.length) { selected = null; target = null; }
+  if (S.phase === 'lobby') { selected = null; target = null; renderLobby(); return; }
+  if (prevPhase !== S.phase) { selected = null; target = null; }
+  renderGame();
+  const key = S.phase + ':' + S.turn;
+  if (myTurn() && key !== lastTurnKey && navigator.vibrate) navigator.vibrate(60);
+  lastTurnKey = key;
+});
+</script>
+</body>
+</html>
